@@ -21,9 +21,9 @@ config = {
     "lang_tgt": "it",
     "model_folder": "weights",
     "model_basename": "tmodel_",
-    "preload": None,
+    "preload": "0",
     "tokenizer_file": "tokenizer_{0}.json",
-    "experiment_name": "runs/tmodel",
+    "experiment_name": "runs/tmodel_2",
 }
 
 
@@ -55,10 +55,6 @@ if __name__ == "__main__":
     # Tensorboard
     writer = SummaryWriter(config["experiment_name"])
 
-    # Setting up the Adam optimizer with the specified learning rate from the '
-    # config' dictionary plus an epsilon value
-    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], eps=1e-9)
-
     # Initializing epoch and global step variables
     initial_epoch = 0
     global_step = 0
@@ -66,24 +62,32 @@ if __name__ == "__main__":
     # Checking if there is a pre-trained model to load
     # If true, loads it
     if config["preload"]:
-        # Extracting model folder from the config
         model_folder = config["model_folder"]
-        # Extracting the base name for model files
         model_basename = config["model_basename"]
         epoch = config["preload"]
-        # Building filename
         model_filename = f"{model_basename}{epoch}.pt"
-        # Combining current directory, the model folder, and the model filename
         model_filename = str(Path(".") / model_folder / model_filename)
-        print(f"Preloading model {model_filename}")
-        state = torch.load(model_filename)  # Loading model
 
-        # Sets epoch to the saved in the state plus one, to resume from where it stopped
-        initial_epoch = state["epoch"] + 1
-        # Loading the optimizer state from the saved model
+        if Path(model_filename).exists():
+            print(f"Preloading model from {model_filename}")
+            state = torch.load(model_filename)
+            model.load_state_dict(state["model_state_dict"])
+            initial_epoch = state["epoch"] + 1
+            global_step = state["global_step"]
+        else:
+            print(
+                f"Warning: No model found at {model_filename}, starting from scratch."
+            )
+
+    # Correcting the device attachment typo
+    model = model.to(device)
+
+    # Setting up the Adam optimizer with the specified learning rate from the '
+    # config' dictionary plus an epsilon value
+    optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], eps=1e-9)
+
+    if config["preload"]:
         optimizer.load_state_dict(state["optimizer_state_dict"])
-        # Loading the global step state from the saved model
-        global_step = state["global_step"]
 
     # Initializing CrossEntropyLoss function for training
     # We ignore padding tokens when computing loss, as they are not relevant for the learning process
@@ -91,9 +95,6 @@ if __name__ == "__main__":
     loss_fn = nn.CrossEntropyLoss(
         ignore_index=tokenizer_src.token_to_id("[PAD]"), label_smoothing=0.1
     ).to(device)
-
-    # add model to device
-    mocdel = model.to(device)
 
     # Iterating over each epoch from the 'initial_epoch' variable up to
     # the number of epochs informed in the config
